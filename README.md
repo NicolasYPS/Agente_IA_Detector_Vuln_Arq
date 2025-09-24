@@ -131,7 +131,6 @@ Projeto sob licença MIT.
 
 ---
 
----
 
 ## Autor
 
