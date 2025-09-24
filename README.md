@@ -128,3 +128,12 @@ O script `dev.sh` faz automaticamente:
 
 ## Licença
 Projeto sob licença MIT.  
+
+---
+
+---
+
+## Autor
+
+Desenvolvido por **Nicolas Y P Souza**  
+🔗 [LinkedIn](https://www.linkedin.com/in/nicolas-y-p-souza/)
