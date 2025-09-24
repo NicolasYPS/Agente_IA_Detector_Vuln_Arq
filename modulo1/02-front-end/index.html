@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>STRIDE • Threat Modeling</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="styles/main.css" />
+  <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+  <script src="scripts/cytoscape-visualization.js"></script>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%230ea5e9'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='Arial' font-size='28' fill='white'>S</text></svg>">
+</head>
+<body>
+  <!-- Barra Superior -->
+  <div class="topbar">
+    <div class="brand">STRIDE • Threat Modeling</div>
+    <div class="legend">
+      <div class="pill"><span class="swatch s1"></span>Spoofing</div>
+      <div class="pill"><span class="swatch s2"></span>Tampering</div>
+      <div class="pill"><span class="swatch s3"></span>Repudiation</div>
+      <div class="pill"><span class="swatch s4"></span>Information Disclosure</div>
+      <div class="pill"><span class="swatch s5"></span>Denial of Service</div>
+      <div class="pill"><span class="swatch s6"></span>Elevation of Privilege</div>
+    </div>
+  </div>
+
+  <div class="page-wrap">
+    <div class="layout">
+      <!-- FORM -->
+      <aside id="formBox" class="card">
+        <h2>Análise STRIDE</h2>
+        <form id="threatForm">
+          <label>Imagem (diagrama)</label>
+          <input type="file" name="imagem" accept="image/*" required />
+          <label>Tipo de aplicação</label>
+          <input type="text" name="tipo_aplicacao" placeholder="Ex.: API REST" required />
+          <label>Método de autenticação</label>
+          <input type="text" name="autenticacao" placeholder="Ex.: JWT + Keycloak" required />
+          <label>Exposta na internet?</label>
+          <input type="text" name="acesso_internet" placeholder="Ex.: Pública" required />
+          <label>Dados sensíveis</label>
+          <input type="text" name="dados_sensíveis" placeholder="Ex.: PII, tokens" required />
+          <label>Descrição da aplicação</label>
+          <textarea name="descricao_aplicacao" placeholder="Resumo do fluxo e componentes..."></textarea>
+
+          <div class="row">
+            <button class="btn primary" type="submit" id="btnSubmit">Analisar</button>
+            <button class="btn" type="button" id="btnReset">Limpar</button>
+          </div>
+          <div id="statusText" class="muted"></div>
+        </form>
+
+        <div class="hr"></div>
+        <label>Resposta bruta (debug)</label>
+        <pre id="rawBox" class="mono" style="max-height:220px; overflow:auto"></pre>
+        <div id="errorBox" class="error hidden"></div>
+      </aside>
+
+      <!-- GRAFO PRINCIPAL STRIDE -->
+      <main class="card">
+        <h3>Mapa STRIDE (Inicial)</h3>
+        <div id="cy"></div>
+      </main>
+
+      <!-- SUGESTÕES + DOWNLOAD -->
+      <aside id="sidePanel" class="card">
+        <div class="side-header">
+          <h3>Improvement Suggestions</h3>
+          <div class="row">
+            <button id="btnDownloadPDF" class="btn small" disabled>📄 Baixar PDF</button>
+          </div>
+        </div>
+        <ul id="suggestions"></ul>
+      </aside>
+    </div>
+
+    <!-- RELATÓRIO COMPLETO -->
+    <section id="reportCard" class="report-card card">
+      <!-- Preenchido via JS -->
+    </section>
+  </div>
+
+  <script>
+    const BACKEND = 'http://localhost:8010';
+
+    const form = document.getElementById('threatForm');
+    const btnSubmit = document.getElementById('btnSubmit');
+    const btnReset = document.getElementById('btnReset');
+    const btnDownloadPDF = document.getElementById('btnDownloadPDF');
+    const statusText = document.getElementById('statusText');
+    const rawBox = document.getElementById('rawBox');
+    const suggestionsUL = document.getElementById('suggestions');
+    const reportCard = document.getElementById('reportCard');
+    const errorBox = document.getElementById('errorBox');
+
+    let lastPayload = null;
+    let lastMeta = null;
+
+    function showError(msg){
+      errorBox.textContent = msg;
+      errorBox.classList.remove('hidden');
+    }
+    function clearError(){
+      errorBox.textContent = '';
+      errorBox.classList.add('hidden');
+    }
+
+    function buildReportHTML(payload, meta) {
+      const rows = window.buildThreatRows(payload);
+      const sugg = payload?.improvement_suggestions || [];
+      const archClass = payload?.architecture_class || "Não classificada";
+      const costOpts = payload?.cost_options || [];
+
+      return `
+        <div class="report-header"><h2>Relatório de Ameaças STRIDE</h2></div>
+        <div class="report-body">
+          <h3>Ameaças (STRIDE)</h3>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr>
+                <th>Threat Type</th><th>Scenario</th><th>Impacto</th>
+                <th>Severidade</th><th>Mitigation</th><th>CVEs</th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+
+          <h3>Arquitetura Sugerida</h3>
+          <div id="cy-infra" class="big-graph"></div>
+          <p><strong>Classificação:</strong> ${archClass}</p>
+          <h4>Opções de Custo</h4>
+          ${costOpts.length ? `<ul>${costOpts.map(c=>`<li>${c}</li>`).join("")}</ul>` : `<p class="muted">Sem opções informadas.</p>`}
+
+          <h3>Sugestões de Melhoria</h3>
+          ${sugg.length ? `<ul>${sugg.map(s=>`<li>${s}</li>`).join("")}</ul>` : `<p class="muted">Sem sugestões.</p>`}
+        </div>
+      `;
+    }
+
+    // --------- Submit ----------
+    form.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      clearError();
+      statusText.textContent='Analisando…'; btnSubmit.disabled=true;
+
+      const fd = new FormData(form);
+      lastMeta = {
+        tipo_aplicacao: fd.get('tipo_aplicacao') || '',
+        autenticacao: fd.get('autenticacao') || '',
+        acesso_internet: fd.get('acesso_internet') || '',
+        dados_sensiveis: fd.get('dados_sensíveis') || '',
+        descricao_aplicacao: fd.get('descricao_aplicacao') || ''
+      };
+
+      try{
+        const resp = await fetch(`${BACKEND}/analisar_ameacas`, { method:'POST', body:fd });
+        const data = await resp.json();
+        rawBox.textContent = JSON.stringify(data,null,2);
+
+        if (!resp.ok) throw new Error(data?.error || 'Falha na análise');
+
+        lastPayload = data?.parsed || {};
+        reportCard.innerHTML = buildReportHTML(lastPayload,lastMeta);
+        window.renderReport(lastPayload,lastMeta);
+
+        btnDownloadPDF.disabled = false;
+        statusText.textContent = 'OK';
+      } catch(err){
+        showError('Erro: ' + (err?.message || err));
+        statusText.textContent = 'Erro';
+        btnDownloadPDF.disabled = true;
+      } finally{
+        btnSubmit.disabled = false;
+      }
+    });
+
+    // Reset
+    btnReset.addEventListener('click',()=>{
+      rawBox.textContent=''; statusText.textContent='';
+      clearError();
+      lastPayload=null; lastMeta=null; btnDownloadPDF.disabled=true;
+      window.renderThreatGraph({});
+      reportCard.innerHTML='';
+      suggestionsUL.innerHTML='';
+    });
+
+    // PDF
+    btnDownloadPDF.addEventListener('click', async () => {
+      if (!lastPayload || !lastMeta) return;
+      try{
+        const resp = await fetch(`${BACKEND}/export_pdf`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            title:"Relatório STRIDE",
+            meta:lastMeta,
+            threats:lastPayload?.threat_model||[],
+            suggestions:lastPayload?.improvement_suggestions||[],
+            bp_text:lastPayload?.bp_text||[]
+          })
+        });
+        if(!resp.ok) throw new Error("Falha ao gerar PDF");
+        const blob=await resp.blob();
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement('a'); a.href=url; a.download="relatorio_stride.pdf";
+        document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      }catch(err){
+        showError("Erro PDF: "+err.message);
+      }
+    });
+
+    // grafo inicial STRIDE
+    window.renderThreatGraph({});
+  </script>
+</body>
+</html>
