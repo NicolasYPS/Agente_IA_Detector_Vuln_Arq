@@ -104,6 +104,16 @@ O script `dev.sh` faz automaticamente:
   - Versão robusta (alto custo): Segregação de zonas + Vault + PKI + SIEM integrado  
 - **Classificação:** Arquitetura atual → simples; recomendação → intermediária.  
 
+## Exemplo de Uso
+
+Abaixo, um exemplo da interface após a análise da arquitetura:
+
+
+![Exemplo da ferramenta](imagens/image.png)
+![Exemplo da ferramenta](imagens/image-1.png)
+![Exemplo da ferramenta](imagens/image-2.png)
+
+
 ## Stack utilizada
 
 ### 🔹 Backend
