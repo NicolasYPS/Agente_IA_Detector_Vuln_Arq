@@ -46,6 +46,7 @@ cd Agente-Detecta-Vuln-Arq
 
 ### 3. Rode tudo com **um comando**
 ```bash
+chmod -x dev.sh
 bash dev.sh
 ```
 
@@ -103,15 +104,6 @@ O script `dev.sh` faz automaticamente:
   - Versão robusta (alto custo): Segregação de zonas + Vault + PKI + SIEM integrado  
 - **Classificação:** Arquitetura atual → simples; recomendação → intermediária.  
 
----
-
-## Roadmap
-
-- [ ] Responsividade do frontend  
-- [ ] Histórico de análises  
-- [ ] Integração com banco de dados  
-- [ ] Container Docker  
-- [ ] Suporte a mais modelos (Mistral, Llama3)  
 
 ---
 
